@@ -1,0 +1,295 @@
+function makeVisualization(psth,useTrials,params,vidName,framesToMakeInds,isNotRunning,ledOn)
+
+if isempty(params) 
+    % defaults for spectrogram
+    params.tapers=[5 6];
+    params.Fs=1/(psth.t(2)-psth.t(1));
+    params.fpass=[1 50];
+    params.trialave=1;
+    params.movingwin=[1 0.025];
+end
+% with these params for specgram, need to upsample 6 times to get 30 fps
+% movie, given that time steps play at 5 Hz
+%
+% if scroll past 33 current time steps at a time (each time step is 30 ms),
+% will see 33 * 0.03 = 0.99 seconds at a time on screen
+% 1 second of time
+% 33 beats of music will play in 33/5=6.6 seconds
+% so need to fully refresh all 33 displayed time points every 6.6 seconds
+% 33 shift steps to fully refresh with scrolling
+% so shift over every 6.6/33=0.2 seconds
+% but 30 fps is every 33 ms
+% so about 6 transitions need to be added every 200 ms
+% again, means upsampling about 6X
+% Vq = interp2(V,Xq,Yq);
+% A truecolor (RGB) image sequence, specified as an M-by-N-by-3-by-K array.
+
+tf=makefullfieldTF();
+tf=tf*1000;
+% [rho, theta] = meshgrid(0:0.001:0.6173,0:0.1:360);
+[rho, theta] = meshgrid(0:0.01:0.4464,0:0.1:360);
+[X, Y] = pol2cart(theta*pi/180,rho);
+center.X=X;
+center.Y=Y;
+
+runVar=makeBinaryVariable(isNotRunning(useTrials),0,'run');
+
+ledVar=makeBinaryVariable(ledOn(useTrials),1,'led');
+
+% Choose color maps for each unit
+cmap{1}=colormap(othercolor('OrRd9'));
+cmap{2}=colormap(othercolor('Oranges3'));
+cmap{3}=colormap('hot');
+cmap{4}=colormap('autumn');
+cmap{5}=colormap('spring');
+cmap{6}=colormap(othercolor('BuOrR_14'));
+cmap{7}=colormap(othercolor('BuOr_8'));
+cmap{8}=colormap(othercolor('BuGr_14'));
+cmap{9}=colormap(othercolor('BuGy_8'));
+cmap{10}=colormap(othercolor('Greens9'));
+cmap{11}=colormap('summer');
+cmap{12}=colormap(othercolor('BuGn9'));
+cmap{13}=colormap('winter');
+cmap{14}=colormap(othercolor('GnBu9'));
+cmap{15}=colormap(othercolor('Blues9'));
+cmap{16}=colormap(othercolor('BuPu9'));
+cmap{17}=colormap(othercolor('GrMg_16'));
+cmap{18}=colormap(othercolor('PRGn11'));
+cmap{19}=colormap(othercolor('Accent6'));
+cmap{20}=colormap('parula');
+cmap{21}=colormap(othercolor('Cat_12'));
+cmap{22}=colormap('bone'); % this last colormap is for the center region
+
+% Build a colormap that consists of all separate colormaps
+cmap_altogether=[];
+for i=1:length(cmap)
+    cmap_altogether=[cmap_altogether;cmap{i}];
+end
+
+% Set up polar bins for units
+polFig=[];
+thetaBins=nan(21,2);
+thetaBins(:,1)=0:17:360-17;
+thetaBins(:,2)=17:17:360;
+thetaBins(end,end)=360;
+allVqs=cell(1,length(psth.psths));
+for i=1:length(psth.psths)
+    unitInd=i;
+    data=psth.psths{unitInd};
+    if islogical(useTrials)
+        data=data(useTrials==true,:);
+    elseif isnumeric(useTrials)
+        data=data(ismember(1:size(data,1),useTrials),:);
+    end
+    data=data';
+    data=data(1:end); % concatenate all trials
+    
+    [S,t,f]=mtspecgrampb(data,params.movingwin,params); % get spectrogram
+    out_Fs=1/(t(2)-t(1));
+    S=S(:,f<=max(params.fpass));
+    
+    % upsample
+    [x,y]=size(S);
+    y=1:y;
+    x=1:x;
+    [xi yi]=meshgrid(1:1/6:max(x),1:max(y));
+    Vq=interp2(x,y,S',xi,yi);
+    allVqs{i}=Vq;
+end
+
+disp(['Counting to ' num2str(size(Vq,2))]);
+%frameByframe=cell(1,length(1:100:size(Vq,2)));
+v = VideoWriter(vidName);
+v.FrameRate = 30;  
+open(v);
+%for j=1:100:size(Vq,2)
+%tf(1:100:1000)=1:100:1000;
+for j=framesToMakeInds
+    disp(j);
+    if mod(j,100)==0
+        disp(j);
+    end
+    if j+200-1>size(Vq,2)
+        break
+    end
+    center.cd=tf(j).*ones(size(center.X));
+    center.cd(floor(length(center.X(:))/2)-500)=0;
+    center.cd(floor(length(center.X(:))/2)+1-500)=1000;
+    [temp]=getPolarSpecgram(polFig,allVqs,j:(j-1)+200,cmap_altogether,thetaBins(:,1),thetaBins(:,2),center,runVar(j),ledVar(j));
+    writeVideo(v,temp);
+end
+
+close(v);
+return
+    
+%implay(frames,30);
+%frames=divideIntoFrames(Vq,200,colormap(othercolor('Cat_12')));
+    
+end
+
+function [return_im]=getPolarSpecgram(f,allVqs,useInds,cmap,theta_start,theta_end,center,runVar,ledVar)
+
+if isempty(f) % first run
+    f=figure('visible','off');
+    %f=figure();
+    set(gca,'xtick',[]);
+    set(gca,'xticklabel',[]);
+    set(gca,'ytick',[]);
+    set(gca,'yticklabel',[]);
+end
+
+%figure(f);
+
+colormap(cmap);
+
+% Map the CData of each surface plot to a contiguous, 
+% nonoverlapping set of data.  Each CData must have
+% the same range.
+cd_mins=nan(1,length(allVqs)+1);
+cd_maxs=nan(1,length(allVqs)+1);
+for i=1:length(allVqs)
+    Vq=allVqs{i};
+    Vq=Vq(:,useInds);
+    Z=rot90([Vq; zeros(50,size(Vq,2))]',2);
+    zmin = nanmin(Z(:));
+    zmax = nanmax(Z(:));
+    cd = min(64,round(63*(Z-zmin)/(zmax-zmin))+1);
+    if nanmax(Z(:))-nanmin(Z(:))<1
+        cd=ones(size(cd));
+        cd(end)=64;
+    end
+    cd = cd+(i-1)*64;
+    cd_mins(i)=nanmin(cd(:));
+    cd_maxs(i)=nanmax(cd(:));
+    
+    [rho, theta] = meshgrid(0:0.001:1.0,theta_start(i):0.1:theta_end(i));
+    [X, Y] = pol2cart(theta*pi/180,rho);
+    S = surf(X,Y,ones(size(X)));
+    set(S,'FaceColor','Texturemap','CData',cd);
+    set(S,'EdgeColor','none');
+    hold on;
+end
+
+Z=center.cd;
+zmin = nanmin(Z(:));
+zmax = nanmax(Z(:));
+cd = min(64,round(63*(Z-zmin)/(zmax-zmin))+1);
+cd = cd+(length(allVqs)+1-1)*64;
+X=center.X;
+Y=center.Y;
+S=surf(X,Y,ones(size(X)));
+set(S,'FaceColor','Texturemap','CData',cd);
+set(S,'EdgeColor','none');
+cd_mins(end)=nanmin(cd(:));
+cd_maxs(end)=nanmax(cd(:));
+
+caxis([nanmin(cd_mins) nanmax(cd_maxs)]);
+
+grid off;
+view(2);
+
+if runVar==1
+    % black
+    %fill([0.6 1 1 0.6],[0.8 1 1 0.8],'k');
+    text(0.64,0.9,'Running','Color','black','FontSize',15);
+    text(0.65,0.9,'Running','Color','white','FontSize',15);
+else
+    % white
+    text(0.65,0.9,'Stationary','Color','black','FontSize',15);
+end
+if ledVar==1
+    % black
+    %fill([-1 -0.6 -0.6 -1],[-0.8 -1 -1 -0.8],'k');
+    text(-0.91,-0.9,'Cortex off','Color','black','FontSize',15);
+    text(-0.9,-0.9,'Cortex off','Color','white','FontSize',15);
+else
+    % white
+    text(-0.9,-0.9,'Cortex on','Color','black','FontSize',15);
+end
+
+set(gca,'xtick',[]);
+set(gca,'xticklabel',[]);
+set(gca,'ytick',[]);
+set(gca,'yticklabel',[]);
+
+im=getframe();
+return_im=im.cdata;
+
+clearvars -except return_im
+
+end
+
+function tf=makefullfieldTF()
+
+% each time step is (1/30)/6=0.005 seconds
+% so show 200 at a time to give 1 second on screen per unit per frame
+% trial structure is 1 second mean luminance, then 2 seconds sinusoidal
+% flicker, then 1 second mean luminance
+
+f=[1 2 4 6 8 10 12 14 16 18 20 30 40 50 60];
+% 200 steps of mean luminance per trial
+% then sinusoidal flicker
+% then 200 steps of mean luminance
+tf=[];
+for i=1:length(f)
+    x=0:0.005:1-0.005;
+    y=sin(2*pi*f(i)*x);
+    tf=[tf zeros(1,200) y zeros(1,200)];
+end
+
+% rescale
+tf=tf-nanmin(tf);
+tf=tf./nanmax(tf);
+
+end
+
+function tf=makeBinaryVariable(input,whichIsBlack,name)
+
+tf=[];
+for i=1:length(input)
+    if input(i)==whichIsBlack
+        if strcmp(name,'led')
+            tf=[tf zeros(1,100) ones(1,600) zeros(1,100)];
+        else
+            tf=[tf ones(1,800)];
+        end
+    else
+        tf=[tf zeros(1,800)];
+    end
+end
+
+% rescale
+tf=tf-nanmin(tf);
+tf=tf./nanmax(tf);
+
+end
+
+
+function frames=divideIntoFrames(Vq,showPerFrame,cmap)
+
+% each time step is (1/30)/6=0.005 seconds
+% so show 200 at a time to give 1 second on screen per unit per frame
+
+% A truecolor (RGB) image sequence, specified as an M-by-N-by-3-by-K array.
+
+v=Vq;
+map = cmap;
+minv = min(v(:));
+maxv = max(v(:));
+ncol = size(map,1);
+s = round(1+(ncol-1)*(v-minv)/(maxv-minv));
+rgb_image = ind2rgb(s,map);
+
+frames=nan(size(rgb_image,1),showPerFrame,3,size(rgb_image,2)-showPerFrame);
+for i=1:size(Vq,2)
+    if mod(i,500)==0
+        disp(i);
+    end
+    inds=i:i+showPerFrame-1;
+    if inds(end)>size(Vq,2)
+        break
+    end
+    frames(:,:,:,i)=rgb_image(:,inds,:);
+end
+
+end

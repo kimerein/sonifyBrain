@@ -27,7 +27,7 @@ out_Fs=1/(t(2)-t(1));
 
 % display for this unit
 figure();
-colormap('hsv');
+colormap(othercolor('Cat_12'));
 imagesc(t,f(f<=max(params.fpass)),S(:,f<=max(params.fpass))');
 xlabel('Time (seconds)');
 ylabel('Frequency (Hz)');
