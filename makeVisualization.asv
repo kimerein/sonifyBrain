@@ -273,10 +273,10 @@ function dg_out=makefullfieldDG(input,inputConds,mapToSF)
 durationOfMusic=6*60+34.24; % in seconds
 % played at 30 Hz, so need durationOfMusic/(1/30) frames
 
-% orientation=0
+orientation=0;
 % spat_freq=0.03; % for this data set, I varied the spatial frequency of the stimulus, not the orientation
 % m330 was shown 0.03, 0.06 cyc/deg as spat freqs
-% temp_freq=3 cycles per second
+temp_freq=3; % cycles per second
 
 x=0:0.005:1-0.005;
 y=sin(2*pi*mapToSF(1)*x);
@@ -285,6 +285,7 @@ dg=repmat(y,100,1);
 
 grayscreen=ones(size(dg)).*nanmean(dg);
 
+tf=[];
 dg_out=[];
 for i=1:length(input)
     currSF=mapToSF(ismember(inputConds,input(i)));
@@ -313,19 +314,30 @@ for i=1:length(input)
     y=sin(2*pi*currSF*x);
     dg=repmat(y,100,1);
     for j=1:250
-        dg_out(:,:,size(dg_out,3)+1)=[dg(:,(j-1)*movePerStep+1:end) dg(:,1:(j-1)*movePerStep)];
+        dg_out(:,:,size(dg_out,3)+1)=[dg(
+    
+    
+    
+    dg=imrotate(repmat(y,100,1),currDeg,'bilinear','crop');
+    
+    if input(i)==whichIsBlack
+        if strcmp(name,'led')
+            tf=[tf zeros(1,50) ones(1,300) zeros(1,50)];
+        else
+            tf=[tf ones(1,400)];
+        end
+    else
+        tf=[tf zeros(1,400)];
     end
-    dg=repmat(grayscreen,1,1,800);
-    dg_out(:,:,size(dg_out,3)+1:size(dg_out,3)+1+size(dg,3)-1)=dg;
 end
 
-dg_out=resample(dg_out,round(durationOfMusic/(1/30)),length(dg_out));
-dg_out(dg_out>0.5)=1;
-dg_out(dg_out<=0.5)=0;
+tf=resample(tf,round(durationOfMusic/(1/30)),length(tf));
+tf(tf>0.5)=1;
+tf(tf<=0.5)=0;
 
 % rescale
-dg_out=dg_out-nanmin(dg_out);
-dg_out=dg_out./nanmax(dg_out);
+tf=tf-nanmin(tf);
+tf=tf./nanmax(tf);
 
 end
 

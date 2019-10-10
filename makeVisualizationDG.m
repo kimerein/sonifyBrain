@@ -1,4 +1,4 @@
-function allframes=makeVisualization(psth,useTrials,params,vidName,framesToMakeInds,isNotRunning,ledOn)
+function allframes=makeVisualizationDG(psth,useTrials,params,vidName,framesToMakeInds,isNotRunning,ledOn,stimput)
 
 if isempty(params) 
     % defaults for spectrogram
@@ -24,13 +24,30 @@ end
 % Vq = interp2(V,Xq,Yq);
 % A truecolor (RGB) image sequence, specified as an M-by-N-by-3-by-K array.
 
-tf=makefullfieldTF();
+tf=makefullfieldDG(stimput(useTrials),[1 2],[4 8]); % 4 and 8 are stand-ins for [0.03 0.06]
 tf=tf*1000;
+tf(tf(:)>490 & tf(:)<515)=500;
 % [rho, theta] = meshgrid(0:0.001:0.6173,0:0.1:360);
 [rho, theta] = meshgrid(0:0.03:0.4464,[0 1 2:7.2:358 359 360]);
 [X, Y] = pol2cart(theta*pi/180,rho);
-center.X=X;
-center.Y=Y;
+% [X1, Y1]=meshgrid(nanmin(X(:)):0.01:nanmax(X(:)),nanmin(Y(:)):0.01:nanmax(Y(:)));
+[X1, Y1]=meshgrid(-0.4:0.01:0.4,-0.4:0.01:0.4);
+% temp_X1=X1(:);
+% temp_Y1=Y1(:);
+% temp_X1(sqrt(X1(:).^2+Y1(:).^2)>0.5)=nan;
+% temp_Y1(sqrt(X1(:).^2+Y1(:).^2)>0.5)=nan;
+X1(sqrt(X1(:).^2+Y1(:).^2)>0.4)=nan;
+Y1(sqrt(X1(:).^2+Y1(:).^2)>0.4)=nan;
+for i=1:size(X1,1)
+    newX1(i,:)=linspace(nanmin(X1(i,:)),nanmax(X1(i,:)),15);
+    newY1(i,:)=linspace(nanmin(Y1(i,:)),nanmax(Y1(i,:)),15);
+end
+% temp_X1=temp_X1(~isnan(temp_X1));
+% temp_Y1=temp_Y1(~isnan(temp_Y1));
+center.X=newX1;
+center.Y=newY1;
+% center.X=reshape(temp_X1,size(;
+% center.Y=temp_Y1;
 
 runVar=makeBinaryVariable(isNotRunning(useTrials),0,'run');
 ledOn=ledOn(useTrials);
@@ -95,7 +112,7 @@ for i=1:length(psth.psths)
     x=1:x;
 %     [xi yi]=meshgrid(1:1/6:max(x),1:max(y));
     % 6 minutes, 34.24 seconds is length of tf music
-    durationOfMusic=6*60+34.24; % in seconds
+    durationOfMusic=6*60+20.22; % in seconds
     % played at 30 Hz, so need durationOfMusic/(1/30) frames
     [xi yi]=meshgrid(linspace(1,max(x),round(durationOfMusic/(1/30))),1:max(y));
     Vq=interp2(x,y,S',xi,yi);
@@ -124,9 +141,9 @@ for j=framesToMakeInds
             allVqs{i}=[temp zeros(size(temp,1),max(framesToMakeInds)+200-size(temp,2))];
         end
     end
-    center.cd=tf(j).*ones(size(center.X));
-    center.cd(floor(length(center.X(:))/2)-400)=0;
-    center.cd(floor(length(center.X(:))/2)+1-400)=1000;
+    center.cd=repmat(tf(:,j),1,size(center.Y,2));
+    center.cd(floor(length(center.X(:))/2)-50)=0;
+    center.cd(floor(length(center.X(:))/2)+1-50)=1000;
     [allframes(k)]=getPolarSpecgram(polFig,allVqs,j:(j-1)+200,cmap_altogether,thetaBins(:,1),thetaBins(:,2),center,runVar(j),ledVar(j));
     k=k+1;
     %writeVideo(v,temp);
@@ -193,6 +210,7 @@ Y=center.Y;
 S=surf(X,Y,ones(size(X)));
 set(S,'FaceColor','Texturemap','CData',cd);
 set(S,'EdgeColor','none');
+
 cd_mins(end)=nanmin(cd(:));
 cd_maxs(end)=nanmax(cd(:));
 
@@ -241,7 +259,7 @@ function tf=makefullfieldTF()
 % flicker, then 1 second mean luminance
 
 % 6 minutes, 34.24 seconds is length of tf music
-durationOfMusic=6*60+34.24; % in seconds
+durationOfMusic=6*60+20.22; % in seconds
 % played at 30 Hz, so need durationOfMusic/(1/30) frames
 
 f=[1 2 4 6 8 10 12 14 16 18 20 30 40 50 60];
@@ -263,14 +281,14 @@ tf=tf./nanmax(tf);
 
 end
 
-function dg_out=makefullfieldDG(input,inputConds,mapToSF)
+function new_dg_out=makefullfieldDG(input,inputConds,mapToSF)
 
 % each time step is (1/30)/6=0.005 seconds
 % trial structure is 1 second mean luminance, then 2 seconds sinusoidal
 % flicker, then 1 second mean luminance
 
 % 6 minutes, 34.24 seconds is length of tf music
-durationOfMusic=6*60+34.24; % in seconds
+durationOfMusic=6*60+20.22; % in seconds
 % played at 30 Hz, so need durationOfMusic/(1/30) frames
 
 % orientation=0
@@ -278,25 +296,23 @@ durationOfMusic=6*60+34.24; % in seconds
 % m330 was shown 0.03, 0.06 cyc/deg as spat freqs
 % temp_freq=3 cycles per second
 
-x=0:0.005:1-0.005;
+spatialstep=0.001;
+x=0:spatialstep:1-spatialstep;
 y=sin(2*pi*mapToSF(1)*x);
-dg=repmat(y,100,1);
+dg=y;
 %dg=imrotate(repmat(y,100,1),mapToDegrees(1),'bilinear','crop');
 
-grayscreen=ones(size(dg)).*nanmean(dg);
+grayscreen=ones(size(dg)).*nanmean(nanmean(dg));
+grayscreen=grayscreen';
 
-dg_out=[];
-for i=1:length(input)
+dg_out=nan(length(grayscreen),1450*length(input));
+for i=1:length(input) % step through each trial's stimulus, add on stimulus
     currSF=mapToSF(ismember(inputConds,input(i)));
     % gray screen for 4 seconds = 4 seconds is 400 inds
     % then dg
     % then gray screen again for 8 seconds = 8 seconds is 800 inds
-    dg=repmat(grayscreen,1,1,400);
-    if i==1
-        dg_out=dg;
-    else
-        dg_out(:,:,size(dg_out,3)+1:size(dg_out,3)+1+size(dg,3)-1)=dg;
-    end
+    dg=grayscreen;
+    dg_out(:,(i-1)*1450+1:(i-1)*1450+1+400-1)=repmat(dg,1,length((i-1)*1450+1:(i-1)*1450+1+400-1));
     % 4, 2.5, 8 
     % dg on from 4 to 6.5 seconds = 2.5 seconds is 250 inds
     % temporal frequency is 3 Hz, and dg on for 2.5 seconds
@@ -305,47 +321,53 @@ for i=1:length(input)
     % find period for current sine spatial frequency
     period=1/currSF;
     % convert to time bins
-    period_inds=period/0.005;
+    period_inds=period/spatialstep;
     % need to translate image
-    nTranslateSteps=round(period_inds*7.5);
+    nTranslateSteps=period_inds*7.5;
     % in 250 time inds
-    movePerStep=nTranslateSteps/250;
+    movePerStep=floor(nTranslateSteps/250);
     y=sin(2*pi*currSF*x);
-    dg=repmat(y,100,1);
+    dg=repmat(y,1,5);
     for j=1:250
-        dg_out(:,:,size(dg_out,3)+1)=[dg(:,(j-1)*movePerStep+1:end) dg(:,1:(j-1)*movePerStep)];
+        dg_out(:,(i-1)*1450+400+j)=[dg((j-1)*movePerStep+1:(j-1)*movePerStep+size(dg_out,1))];
     end
-    dg=repmat(grayscreen,1,1,800);
-    dg_out(:,:,size(dg_out,3)+1:size(dg_out,3)+1+size(dg,3)-1)=dg;
+    dg=grayscreen;
+    dg_out(:,(i-1)*1450+1+650:(i-1)*1450+1+800-1+650)=repmat(dg,1,length((i-1)*1450+1+650:(i-1)*1450+1+800-1+650));
 end
 
-dg_out=resample(dg_out,round(durationOfMusic/(1/30)),length(dg_out));
-dg_out(dg_out>0.5)=1;
-dg_out(dg_out<=0.5)=0;
+% dg_out(dg_out>0.5)=1;
+% dg_out(dg_out<=0.5)=0;
+% disp('Counting to');
+% disp(size(dg_out,1));
+for i=1:size(dg_out,1)
+%     disp(i);
+    new_dg_out(i,:)=resample(dg_out(i,:),round(durationOfMusic/(1/30)),length(dg_out(i,:)));
+end
 
 % rescale
-dg_out=dg_out-nanmin(dg_out);
-dg_out=dg_out./nanmax(dg_out);
+new_dg_out=new_dg_out-nanmin(new_dg_out(:));
+new_dg_out=new_dg_out./nanmax(new_dg_out(:));
 
 end
 
 function tf=makeBinaryVariable(input,whichIsBlack,name)
 
-% 6 minutes, 34.24 seconds is length of tf music
-durationOfMusic=6*60+34.24; % in seconds
+% 6 minutes, 20.22 seconds is length of dg music
+durationOfMusic=6*60+20.22; % in seconds
+% 6:20.22
 % played at 30 Hz, so need durationOfMusic/(1/30) frames
 
 tf=[];
 for i=1:length(input)
     if input(i)==whichIsBlack
         if strcmp(name,'led')
-            tf=[tf zeros(1,50) ones(1,300) zeros(1,50)];
+            tf=[tf zeros(1,350) ones(1,350) zeros(1,750)];
         else
-            tf=[tf ones(1,400)];
+            tf=[tf ones(1,1450)];
         end
     else
-        tf=[tf zeros(1,400)];
-    end
+        tf=[tf zeros(1,1450)];
+    end 
 end
 
 tf=resample(tf,round(durationOfMusic/(1/30)),length(tf));
@@ -353,8 +375,8 @@ tf(tf>0.5)=1;
 tf(tf<=0.5)=0;
 
 % rescale
-tf=tf-nanmin(tf);
-tf=tf./nanmax(tf);
+% tf=tf-nanmin(tf);
+% tf=tf./nanmax(tf);
 
 end
 
